@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<!-- Head tag -->
+<head><meta name="generator" content="Hexo 3.9.0">
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="google-site-verification" content="xBT4GhYoi5qRD5tr338pgPM5OWHHIDR6mNg1a3euekI">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content>
+    <meta name="keyword" content>
+    <link rel="shortcut icon" href="/blog/img/favicon.ico">
+
+    <title>
+        
+          HotSpot虚拟机垃圾收集优化教程-人机工程学 - Xiaoyao的博客 | Xiaoyao&#39;s Blog
+        
+    </title>
+
+    <link rel="canonical" href="https://xiaoyao-jimmy.github.io/blog/blog/2019/08/19/人体工程学(译文)/">
+
+    <!-- Bootstrap Core CSS -->
+    <link rel="stylesheet" href="/blog/css/bootstrap.min.css">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/blog/css/hux-blog.min.css">
+
+    <!-- Pygments Highlight CSS -->
+    <link rel="stylesheet" href="/blog/css/highlight.css">
+
+    <!-- Custom Fonts -->
+    <!-- <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css" rel="stylesheet" type="text/css"> -->
+    <!-- Hux change font-awesome CDN to qiniu -->
+    <link href="https://cdn.staticfile.org/font-awesome/4.5.0/css/font-awesome.min.css" rel="stylesheet" type="text/css">
+
+
+    <!-- Hux Delete, sad but pending in China
+    <link href='http://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+    <link href='http://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/
+    css'>
+    -->
+
+
+    <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+        <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+        <script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+    <![endif]-->
+
+    <!-- ga & ba script hoook -->
+    <script></script>
+</head>
+
+
+<!-- hack iOS CSS :active style -->
+<body ontouchstart="">
+
+    <!-- Navigation -->
+<nav class="navbar navbar-default navbar-custom navbar-fixed-top">
+    <div class="container-fluid">
+        <!-- Brand and toggle get grouped for better mobile display -->
+        <div class="navbar-header page-scroll">
+            <button type="button" class="navbar-toggle">
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/blog/">Xiaoyao&#39;s Blog</a>
+        </div>
+
+        <!-- Collect the nav links, forms, and other content for toggling -->
+        <!-- Known Issue, found by Hux:
+            <nav>'s height woule be hold on by its content.
+            so, when navbar scale out, the <nav> will cover tags.
+            also mask any touch event of tags, unfortunately.
+        -->
+        <div id="huxblog_navbar">
+            <div class="navbar-collapse">
+                <ul class="nav navbar-nav navbar-right">
+                    <li>
+                        <a href="/blog/">Home</a>
+                    </li>
+
+                    
+
+                        
+                    
+
+                        
+                        <li>
+                            <a href="/blog/about/">About</a>
+                        </li>
+                        
+                    
+
+                        
+                        <li>
+                            <a href="/blog/archives/">Archives</a>
+                        </li>
+                        
+                    
+
+                        
+                        <li>
+                            <a href="/blog/tags/">Tags</a>
+                        </li>
+                        
+                    
+                    
+                </ul>
+            </div>
+        </div>
+        <!-- /.navbar-collapse -->
+    </div>
+    <!-- /.container -->
+</nav>
+<script>
+    // Drop Bootstarp low-performance Navbar
+    // Use customize navbar with high-quality material design animation
+    // in high-perf jank-free CSS3 implementation
+    var $body   = document.body;
+    var $toggle = document.querySelector('.navbar-toggle');
+    var $navbar = document.querySelector('#huxblog_navbar');
+    var $collapse = document.querySelector('.navbar-collapse');
+
+    $toggle.addEventListener('click', handleMagic)
+    function handleMagic(e){
+        if ($navbar.className.indexOf('in') > 0) {
+        // CLOSE
+            $navbar.className = " ";
+            // wait until animation end.
+            setTimeout(function(){
+                // prevent frequently toggle
+                if($navbar.className.indexOf('in') < 0) {
+                    $collapse.style.height = "0px"
+                }
+            },400)
+        }else{
+        // OPEN
+            $collapse.style.height = "auto"
+            $navbar.className += " in";
+        }
+    }
+</script>
+
+
+    <!-- Main Content -->
+    
+<!-- Image to hack wechat -->
+<!-- <img src="https://xiaoyao-jimmy.github.io/blog/blog/img/icon_wechat.png" width="0" height="0"> -->
+<!-- <img src="{{ site.baseurl }}/{% if page.header-img %}{{ page.header-img }}{% else %}{{ site.header-img }}{% endif %}" width="0" height="0"> -->
+
+<!-- Post Header -->
+<style type="text/css">
+    header.intro-header{
+        background-image: url('post-bg-js-version.jpg')
+    }
+</style>
+<header class="intro-header" >
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
+                <div class="post-heading">
+                    <div class="tags">
+                        
+                          <a class="tag" href="/blog/tags/#Java" title="Java">Java</a>
+                        
+                          <a class="tag" href="/blog/tags/#JVM" title="JVM">JVM</a>
+                        
+                          <a class="tag" href="/blog/tags/#译文" title="译文">译文</a>
+                        
+                    </div>
+                    <h1>HotSpot虚拟机垃圾收集优化教程-人机工程学</h1>
+                    <h2 class="subheading">Java JVM 译文</h2>
+                    <span class="meta">
+                        Posted by Xiaoyao on
+                        2019-08-19
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Post Content -->
+<article>
+    <div class="container">
+        <div class="row">
+
+    <!-- Post Container -->
+            <div class="
+                col-lg-8 col-lg-offset-2
+                col-md-10 col-md-offset-1
+                post-container">
+
+                <h1 id="人机工程学-（垃圾回收自学习优化策略）"><a href="#人机工程学-（垃圾回收自学习优化策略）" class="headerlink" title="人机工程学 （垃圾回收自学习优化策略）"></a>人机工程学 （垃圾回收自学习优化策略）</h1><p>人机工程学是Java虚拟机和垃圾收集探索式（例如基于行为的探索式算法）提高应用程序性能的过程。</p>
+<p>Java虚拟机为垃圾收集器，堆大小和运行时编译器配置提供基于平台的默认选择。这些选择满足不同类型应用程序的需求，并且需要较少的命令行调优。此外，基于行为调优动态优化堆的大小，以满足应用程序特定的性能要求。</p>
+<p>本节将介绍这些默认的选择和基于行为的调优。在使用后续章节中更加详细的控制配置前，请使用这些默认配置。</p>
+<p>_话题_</p>
+<ul>
+<li>垃圾收集器，堆和运行时编译器的默认选择</li>
+<li>基于行为的优化</li>
+<li>最大暂停时间目标</li>
+<li>吞吐量目标</li>
+<li>足迹</li>
+<li>调优策略</li>
+</ul>
+<h2 id="垃圾收集器，堆和运行时编译器的默认选择"><a href="#垃圾收集器，堆和运行时编译器的默认选择" class="headerlink" title="垃圾收集器，堆和运行时编译器的默认选择"></a>垃圾收集器，堆和运行时编译器的默认选择</h2><p>这些是重要的垃圾收集器，堆和运行时编译器的默认选择：</p>
+<ul>
+<li>Garbage-First (G1)垃圾收集器</li>
+<li>垃圾回收线程的最大数量受堆大小和可用CPU资源的限制</li>
+<li>初始化堆大小占物理内存的1/64</li>
+<li>最大堆大小占物理内存的1/4</li>
+<li>分层编译器，同时使用C1和C2 (JIT)</li>
+</ul>
+<h2 id="基于行为的优化"><a href="#基于行为的优化" class="headerlink" title="基于行为的优化"></a>基于行为的优化</h2><p>Java HotSpot垃圾收集器可以被配置为优先满足两个目标之一：最大暂停时间和应用程序吞吐量。如果满足了优先目标，垃圾收集器会尝试最大努力满足另外一个目标。当然，这些目标并非总能实现：应用程序需要最少的堆大小来保存至少所有的活跃数据，而其他的配置可能会妨碍实现某些或者所有所需的目标。</p>
+<h3 id="最大暂停时间目标"><a href="#最大暂停时间目标" class="headerlink" title="最大暂停时间目标"></a>最大暂停时间目标</h3><p>暂停时间是垃圾收集器停止应用程序并且恢复不在使用的空间的持续时间。最大暂停时间目标的目的是限制这些暂停时间中最长的暂停时间。垃圾收集器维护暂停的平均时间和平均值上的方差。平均时间是从执行开始时开始计算的，但是他是加权的，所以最近的暂停次数越多，计算的次数也就越多。如果平均暂停时间加上暂停时间的方差大于最大暂停时间，则垃圾收集器会认为最大暂停时间的目标没有满足。</p>
+<p>最大暂停时间目标用命令行选项 -XX:MaxGCPauseMillis=<nnn> 指定。这被解释为向垃圾收集器发出一个提示，即需要的暂停时间小于或等于该选项毫秒。垃圾收集器调整Java堆大小和其他与垃圾收集相关的参数，以使得垃圾收集暂停时间小于<nnn>毫秒。最大暂停时间目标的默认值因垃圾收集器而异。这些调整可能会使垃圾收集更加频繁地发生，降低应用程序总体的吞吐量。不过，在某些情况下，所期望的暂停时间目标没有办法实现。</nnn></nnn></p>
+<h3 id="吞吐量目标"><a href="#吞吐量目标" class="headerlink" title="吞吐量目标"></a>吞吐量目标</h3><p>吞吐量目标是根据收集垃圾所花费的时间来衡量的，而在垃圾收集之外所花费的时间是应用程序时间。目标由命令行选项 -XX:GCTimeRation=nnn 指定。垃圾收集时间和应用程序时间之比是1/(1+nnn)。例如-XX:GCTimeRation=19将垃圾收集时间设置为总时间的1/20或者5%。垃圾收集花费的时间是所有垃圾收集引发的暂停时间的总和。如果达不到吞吐量目标，那么垃圾收集器的一个可能操作是增加堆的大小，以便在两次垃圾收集暂停之间应用程序中花费的时间更长。</p>
+<h3 id="足迹（空间量？？？）"><a href="#足迹（空间量？？？）" class="headerlink" title="足迹（空间量？？？）"></a>足迹（空间量？？？）</h3><p>如果吞吐量和最大暂停时间目标已经达到，则垃圾收集器减少堆的大小，直到不能满足目标之一(总是吞吐量目标不能满足)。垃圾收集器可以使用的最小和最大堆大小分别使用-Xms=<nnn>和-Xmx=<mmm>最小和最大堆大小。</mmm></nnn></p>
+<h2 id="调优策略"><a href="#调优策略" class="headerlink" title="调优策略"></a>调优策略</h2><p>堆大小增长或者缩小到支持所选吞吐量目标的大小。了解堆调优策略，如选择最大的堆大小，并选择最大暂停时间目标。</p>
+<p>不要选择堆的最大值，除非你知道你需要比默认堆大小更大的堆。选择一个足以满足你的应用程序的吞吐量目标。</p>
+<p>应用程序行为的改变可能导致堆增长或者收缩。例如，如果应用程序以更高的速率开始分配，那么堆将增长以保持相同的吞吐量。</p>
+<p>如果堆大小增加到他的最大值，但是他的吞吐量目标还是没有满足，这说明最大的堆大小对于吞吐量目标来说太小了。将最大堆大小设置为近乎平台上的总物理内存，但不会导致应用程序的交换（应用程序将内存内容写入硬盘？？？）。再次执行应用程序，如果吞吐量目标仍未实现，则应用程序的吞吐量目标对于平台上的可用内存来说太高。</p>
+<p>如果吞吐量的目标可以实现，但暂停太长，则选择最大暂停时间目标。选择最大暂停时间目标可能意味着吞吐量目标无法满足，因此选择适用于应用程序的折中值。</p>
+<p>当垃圾收集器试图去满足相互竞争的目标时，堆的大小通常会振荡。即使应用程序达到稳定的状态，这种情况也是事实存在的。实现吞吐量目标（可能需要更大的堆）的压力与达到最大暂停时间目标（可能需要更小的堆）和最小占有率。</p>
+<h2 id="批注"><a href="#批注" class="headerlink" title="批注"></a>批注</h2><h3 id="部分专有名词翻译个人感觉不好，希望各位指正，提升翻译质量"><a href="#部分专有名词翻译个人感觉不好，希望各位指正，提升翻译质量" class="headerlink" title="部分专有名词翻译个人感觉不好，希望各位指正，提升翻译质量"></a>部分专有名词翻译个人感觉不好，希望各位指正，提升翻译质量</h3>
+
+                <hr>
+
+                
+
+                <ul class="pager">
+                    
+                        <li class="previous">
+                            <a href="/blog/2019/08/21/垃圾收集器实现(译文)/" data-toggle="tooltip" data-placement="top" title="HotSpot虚拟机垃圾收集优化教程-垃圾收集器实现">&larr; Previous Post</a>
+                        </li>
+                    
+                    
+                        <li class="next">
+                            <a href="/blog/2019/08/15/垃圾回收调优简介(译文)/" data-toggle="tooltip" data-placement="top" title="HotSpot虚拟机垃圾收集优化教程-垃圾收集调优简介">Next Post &rarr;</a>
+                        </li>
+                    
+                </ul>
+
+                
+
+                
+                <!-- disqus 评论框 start -->
+                <div class="comment">
+                    <div id="disqus_thread" class="disqus-thread"></div>
+                </div>
+                <!-- disqus 评论框 end -->
+                
+
+            </div>
+    <!-- Side Catalog Container -->
+        
+
+    <!-- Sidebar Container -->
+
+            <div class="
+                col-lg-8 col-lg-offset-2
+                col-md-10 col-md-offset-1
+                sidebar-container">
+
+                <!-- Featured Tags -->
+                
+                <section>
+                    <!-- no hr -->
+                    <h5><a href="/blog/tags/">FEATURED TAGS</a></h5>
+                    <div class="tags">
+                       
+                          <a class="tag" href="/blog/tags/#Java" title="Java">Java</a>
+                        
+                          <a class="tag" href="/blog/tags/#JVM" title="JVM">JVM</a>
+                        
+                          <a class="tag" href="/blog/tags/#译文" title="译文">译文</a>
+                        
+                    </div>
+                </section>
+                
+
+                <!-- Friends Blog -->
+                
+                <hr>
+                <h5>FRIENDS</h5>
+                <ul class="list-inline">
+
+                    
+                        <li><a href="" target="_blank"></a></li>
+                    
+                </ul>
+                
+            </div>
+
+        </div>
+    </div>
+</article>
+
+
+
+
+<!-- disqus 公共JS代码 start (一个网页只需插入一次) -->
+<script type="text/javascript">
+    /* * * CONFIGURATION VARIABLES * * */
+    var disqus_shortname = "xiaoyao-blog";
+    var disqus_identifier = "https://xiaoyao-jimmy.github.io/blog/2019/08/19/人体工程学(译文)/";
+    var disqus_url = "https://xiaoyao-jimmy.github.io/blog/2019/08/19/人体工程学(译文)/";
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<!-- disqus 公共JS代码 end -->
+
+
+
+
+<!-- async load function -->
+<script>
+    function async(u, c) {
+      var d = document, t = 'script',
+          o = d.createElement(t),
+          s = d.getElementsByTagName(t)[0];
+      o.src = u;
+      if (c) { o.addEventListener('load', function (e) { c(null, e); }, false); }
+      s.parentNode.insertBefore(o, s);
+    }
+</script>
+<!-- anchor-js, Doc:http://bryanbraun.github.io/anchorjs/ -->
+<script>
+    async("https://cdn.bootcss.com/anchor-js/1.1.1/anchor.min.js",function(){
+        anchors.options = {
+          visible: 'always',
+          placement: 'right',
+          icon: '#'
+        };
+        anchors.add().remove('.intro-header h1').remove('.subheading').remove('.sidebar-container h5');
+    })
+</script>
+<style>
+    /* place left on bigger screen */
+    @media all and (min-width: 800px) {
+        .anchorjs-link{
+            position: absolute;
+            left: -0.75em;
+            font-size: 1.1em;
+            margin-top : -0.1em;
+        }
+    }
+</style>
+
+
+
+    <!-- Footer -->
+    <!-- Footer -->
+<footer>
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
+                <ul class="list-inline text-center">
+                
+                
+                
+
+                
+
+                
+
+                
+
+                
+
+                </ul>
+                <p class="copyright text-muted">
+                    Copyright &copy; Xiaoyao&#39;s Blog 2020 
+                    <br>
+                    Theme by <a href="http://huangxuan.me">Hux</a> 
+                    <span style="display: inline-block; margin: 0 5px;">
+                        <i class="fa fa-heart"></i>
+                    </span> 
+                    Ported by <a href="http://blog.kaijun.rocks">Kaijun</a> | 
+                    <iframe
+                        style="margin-left: 2px; margin-bottom:-5px;"
+                        frameborder="0" scrolling="0" width="91px" height="20px"
+                        src="https://ghbtns.com/github-btn.html?user=kaijun&repo=hexo-theme-huxblog&type=star&count=true" >
+                    </iframe>
+                </p>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<!-- jQuery -->
+<script src="/blog/js/jquery.min.js"></script>
+
+<!-- Bootstrap Core JavaScript -->
+<script src="/blog/js/bootstrap.min.js"></script>
+
+<!-- Custom Theme JavaScript -->
+<script src="/blog/js/hux-blog.min.js"></script>
+
+
+<!-- async load function -->
+<script>
+    function async(u, c) {
+      var d = document, t = 'script',
+          o = d.createElement(t),
+          s = d.getElementsByTagName(t)[0];
+      o.src = u;
+      if (c) { o.addEventListener('load', function (e) { c(null, e); }, false); }
+      s.parentNode.insertBefore(o, s);
+    }
+</script>
+
+<!-- 
+     Because of the native support for backtick-style fenced code blocks 
+     right within the Markdown is landed in Github Pages, 
+     From V1.6, There is no need for Highlight.js, 
+     so Huxblog drops it officially.
+
+     - https://github.com/blog/2100-github-pages-now-faster-and-simpler-with-jekyll-3-0  
+     - https://help.github.com/articles/creating-and-highlighting-code-blocks/    
+-->
+<!--
+    <script>
+        async("http://cdn.bootcss.com/highlight.js/8.6/highlight.min.js", function(){
+            hljs.initHighlightingOnLoad();
+        })
+    </script>
+    <link href="http://cdn.bootcss.com/highlight.js/8.6/styles/github.min.css" rel="stylesheet">
+-->
+
+
+<!-- jquery.tagcloud.js -->
+<script>
+    // only load tagcloud.js in tag.html
+    if($('#tag_cloud').length !== 0){
+        async("https://xiaoyao-jimmy.github.io/blog/blog/js/jquery.tagcloud.js",function(){
+            $.fn.tagcloud.defaults = {
+                //size: {start: 1, end: 1, unit: 'em'},
+                color: {start: '#bbbbee', end: '#0085a1'},
+            };
+            $('#tag_cloud a').tagcloud();
+        })
+    }
+</script>
+
+<!--fastClick.js -->
+<script>
+    async("https://cdn.bootcss.com/fastclick/1.0.6/fastclick.min.js", function(){
+        var $nav = document.querySelector("nav");
+        if($nav) FastClick.attach($nav);
+    })
+</script>
+
+
+<!-- Google Analytics -->
+
+
+<script>
+    // dynamic User by Hux
+    var _gaId = 'UA-49627206-1';
+    var _gaDomain = 'huangxuan.me';
+
+    // Originial
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+    ga('create', _gaId, _gaDomain);
+    ga('send', 'pageview');
+</script>
+
+
+
+
+<!-- Baidu Tongji -->
+
+<script>
+    // dynamic User by Hux
+    var _baId = '4cc1f2d8f3067386cc5cdb626a202900';
+
+    // Originial
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "//hm.baidu.com/hm.js?" + _baId;
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+</script>
+
+
+<!-- Side Catalog -->
+
+
+
+
+
+<!-- Image to hack wechat -->
+<img src="https://xiaoyao-jimmy.github.io/blog/blog/img/icon_wechat.png" width="0" height="0" />
+<!-- Migrate from head to bottom, no longer block render and still work -->
+
+</body>
+
+</html>

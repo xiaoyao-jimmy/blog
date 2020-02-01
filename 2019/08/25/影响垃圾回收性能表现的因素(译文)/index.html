@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<!-- Head tag -->
+<head><meta name="generator" content="Hexo 3.9.0">
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="google-site-verification" content="xBT4GhYoi5qRD5tr338pgPM5OWHHIDR6mNg1a3euekI">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content>
+    <meta name="keyword" content>
+    <link rel="shortcut icon" href="/blog/img/favicon.ico">
+
+    <title>
+        
+          HotSpot虚拟机垃圾收集优化教程-影响垃圾回收性能表现的因素 - Xiaoyao的博客 | Xiaoyao&#39;s Blog
+        
+    </title>
+
+    <link rel="canonical" href="https://xiaoyao-jimmy.github.io/blog/blog/2019/08/25/影响垃圾回收性能表现的因素(译文)/">
+
+    <!-- Bootstrap Core CSS -->
+    <link rel="stylesheet" href="/blog/css/bootstrap.min.css">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/blog/css/hux-blog.min.css">
+
+    <!-- Pygments Highlight CSS -->
+    <link rel="stylesheet" href="/blog/css/highlight.css">
+
+    <!-- Custom Fonts -->
+    <!-- <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css" rel="stylesheet" type="text/css"> -->
+    <!-- Hux change font-awesome CDN to qiniu -->
+    <link href="https://cdn.staticfile.org/font-awesome/4.5.0/css/font-awesome.min.css" rel="stylesheet" type="text/css">
+
+
+    <!-- Hux Delete, sad but pending in China
+    <link href='http://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+    <link href='http://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/
+    css'>
+    -->
+
+
+    <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+        <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+        <script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+    <![endif]-->
+
+    <!-- ga & ba script hoook -->
+    <script></script>
+</head>
+
+
+<!-- hack iOS CSS :active style -->
+<body ontouchstart="">
+
+    <!-- Navigation -->
+<nav class="navbar navbar-default navbar-custom navbar-fixed-top">
+    <div class="container-fluid">
+        <!-- Brand and toggle get grouped for better mobile display -->
+        <div class="navbar-header page-scroll">
+            <button type="button" class="navbar-toggle">
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/blog/">Xiaoyao&#39;s Blog</a>
+        </div>
+
+        <!-- Collect the nav links, forms, and other content for toggling -->
+        <!-- Known Issue, found by Hux:
+            <nav>'s height woule be hold on by its content.
+            so, when navbar scale out, the <nav> will cover tags.
+            also mask any touch event of tags, unfortunately.
+        -->
+        <div id="huxblog_navbar">
+            <div class="navbar-collapse">
+                <ul class="nav navbar-nav navbar-right">
+                    <li>
+                        <a href="/blog/">Home</a>
+                    </li>
+
+                    
+
+                        
+                    
+
+                        
+                        <li>
+                            <a href="/blog/about/">About</a>
+                        </li>
+                        
+                    
+
+                        
+                        <li>
+                            <a href="/blog/archives/">Archives</a>
+                        </li>
+                        
+                    
+
+                        
+                        <li>
+                            <a href="/blog/tags/">Tags</a>
+                        </li>
+                        
+                    
+                    
+                </ul>
+            </div>
+        </div>
+        <!-- /.navbar-collapse -->
+    </div>
+    <!-- /.container -->
+</nav>
+<script>
+    // Drop Bootstarp low-performance Navbar
+    // Use customize navbar with high-quality material design animation
+    // in high-perf jank-free CSS3 implementation
+    var $body   = document.body;
+    var $toggle = document.querySelector('.navbar-toggle');
+    var $navbar = document.querySelector('#huxblog_navbar');
+    var $collapse = document.querySelector('.navbar-collapse');
+
+    $toggle.addEventListener('click', handleMagic)
+    function handleMagic(e){
+        if ($navbar.className.indexOf('in') > 0) {
+        // CLOSE
+            $navbar.className = " ";
+            // wait until animation end.
+            setTimeout(function(){
+                // prevent frequently toggle
+                if($navbar.className.indexOf('in') < 0) {
+                    $collapse.style.height = "0px"
+                }
+            },400)
+        }else{
+        // OPEN
+            $collapse.style.height = "auto"
+            $navbar.className += " in";
+        }
+    }
+</script>
+
+
+    <!-- Main Content -->
+    
+<!-- Image to hack wechat -->
+<!-- <img src="https://xiaoyao-jimmy.github.io/blog/blog/img/icon_wechat.png" width="0" height="0"> -->
+<!-- <img src="{{ site.baseurl }}/{% if page.header-img %}{{ page.header-img }}{% else %}{{ site.header-img }}{% endif %}" width="0" height="0"> -->
+
+<!-- Post Header -->
+<style type="text/css">
+    header.intro-header{
+        background-image: url('post-bg-js-version.jpg')
+    }
+</style>
+<header class="intro-header" >
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
+                <div class="post-heading">
+                    <div class="tags">
+                        
+                          <a class="tag" href="/blog/tags/#Java" title="Java">Java</a>
+                        
+                          <a class="tag" href="/blog/tags/#JVM" title="JVM">JVM</a>
+                        
+                          <a class="tag" href="/blog/tags/#译文" title="译文">译文</a>
+                        
+                    </div>
+                    <h1>HotSpot虚拟机垃圾收集优化教程-影响垃圾回收性能表现的因素</h1>
+                    <h2 class="subheading">Java JVM 译文</h2>
+                    <span class="meta">
+                        Posted by Xiaoyao on
+                        2019-08-25
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Post Content -->
+<article>
+    <div class="container">
+        <div class="row">
+
+    <!-- Post Container -->
+            <div class="
+                col-lg-8 col-lg-offset-2
+                col-md-10 col-md-offset-1
+                post-container">
+
+                <h1 id="影响垃圾回收性能表现的因素"><a href="#影响垃圾回收性能表现的因素" class="headerlink" title="影响垃圾回收性能表现的因素"></a>影响垃圾回收性能表现的因素</h1><p>影响垃圾收集性能的两个最重要因素是总的可用内存和专用于年轻代的内存比例。</p>
+<p>_话题_</p>
+<ul>
+<li>总堆<ul>
+<li>影响分代堆大小的选项</li>
+<li>堆大小的默认选项值</li>
+<li>通过最小化Java堆大小来节省动态占用空间</li>
+</ul>
+</li>
+<li>年轻代<ul>
+<li>年轻代堆大小选项值</li>
+<li>幸存者空间大小</li>
+</ul>
+</li>
+</ul>
+<h2 id="总堆"><a href="#总堆" class="headerlink" title="总堆"></a>总堆</h2><p>影响垃圾收集性能的最重要的因素是总可用内存。因为垃圾收集发生在分代内存填满时。吞吐量与可用内存成反比。</p>
+<p><strong><em>注意</em></strong> 下面关于堆的增长和收缩，堆的布局和默认值的讨论，将用串行垃圾收集器作为例子。同时，其他的垃圾收集器使用相似的机制，但此处提供的详细信息可能不适用于其他收集器。有关其他收集器的类似信息，请参阅相应的主题。</p>
+<h3 id="影响分代堆大小的选项"><a href="#影响分代堆大小的选项" class="headerlink" title="影响分代堆大小的选项"></a>影响分代堆大小的选项</h3><p>许多选项会影响分代堆的大小。图4-1说明了堆中提交空间和虚拟空间之间的区别。在虚拟机初始化时，将保留堆的整个空间。可以使用-Xmx选项指定保留空间的大小。如果-Xms参数的值比-Xmx参数的值小，那么并不是所有保留的空间都立刻提交给虚拟机。未提交的空间在此图中标记为“虚拟”。堆的不同部分，即老一代和年轻一代，可以根据需要增长到虚拟空间的极限。</p>
+<p>一些参数代表一部分堆与另外一部分堆的比率。例如，参数-XX:NewRatio代表老一代和年轻一代的相对大小。</p>
+<p><img src="https://docs.oracle.com/en/java/javase/13/gctuning/img/jsgct_dt_006_prm_gn_sz_new.png" alt></p>
+<h3 id="堆大小的默认选项"><a href="#堆大小的默认选项" class="headerlink" title="堆大小的默认选项"></a>堆大小的默认选项</h3><p>默认情况下，虚拟机会在每次垃圾收集增大或者缩小堆，以尝试在每次垃圾收集中活动对象的可用空间比例保持在特定范围。</p>
+<p>这个目标范围由被设置为百分比的选项-XX:MinHeapFreeRation和-XX:MaxHeapFreeRation，并且总大小由-Xms和-Xmx限定。</p>
+<p>有了这些选项，如果分代的空闲空间百分比低于40%，则该分代扩展大小以维护40%的空闲空间，直到达到分代可以申请的最大空间。相似的，如果空闲空间超过70%，则分代会收缩以便保持70%的空闲空间，不会小于分代设置的最小值。</p>
+<p>Java SE中用于并行垃圾收集器的计算现在用于所有垃圾收集器。计算的一部分是对64位平台最大堆大小的上限。参阅并行垃圾收集器默认堆大小。对于客户端Java虚拟机有类似的计算，这导致比服务器Java虚拟机更小的最大堆的大小。</p>
+<p>以下是关于服务器应用程序堆大小的一般准则：</p>
+<ul>
+<li>除非对暂停时间有要求，否则对虚拟机分配尽可能多的内存。默认的堆大小通常来讲太小。</li>
+<li>将-Xms和-Xmx设置为相同的值可以通过从虚拟机中删除最重要的大小调整策略来提高可预测性。但是如果选择不当，虚拟机将无法进行补偿。</li>
+<li>通常随着处理区数量的增加而增加内存，因为可以并行对内存分配。</li>
+</ul>
+<h3 id="通过最小化Java堆大小来节省动态占用空间"><a href="#通过最小化Java堆大小来节省动态占用空间" class="headerlink" title="通过最小化Java堆大小来节省动态占用空间"></a>通过最小化Java堆大小来节省动态占用空间</h3><p>如果需要最小化应用程序的动态内存占用（在执行过程中消耗最大RAM），那么可以通过最小化Java堆大小来实现这一点。Java SE嵌入式应用程序可能需要这样的配置。</p>
+<p>通过命令行降低选项-XX:MaxHeapFreeRatio(默认值是70%)和-XX:MinHeapFreeRation(默认值40%)的值，讲-XX:MaxHeapFreeRatio降低到10%已表明可以成功地减少堆大小，而不会导致太多的性能降低；但是，结果可能因应用程序而异。对这些参数尝试不同的值，直到他们尽可能低，但任然保持可接受的性能。</p>
+<p>此外，可以指定-XX:-ShrinkHeapInSteps,这会立刻将Java堆减少到目标大小。使用此设置可能会导致性能下降。默认情况下，Java运行时会以增量方式将Java堆减少到目标大小。此过程需要多个垃圾回收周期</p>
+<h2 id="年轻代"><a href="#年轻代" class="headerlink" title="年轻代"></a>年轻代</h2><p>在总可用内存之后，影响垃圾收集性能的第二个最重要的因素是专用于年轻代的堆比例。</p>
+<p>年轻代越大，minor垃圾收集发生的就越少。然而，对于有限的堆大小，较大的年轻代意味着较小的年老代。这将增加major垃圾收集的频率。最佳选择取决于应用程序分配的对象的生存周期分布。</p>
+<h3 id="年轻代堆大小选项值"><a href="#年轻代堆大小选项值" class="headerlink" title="年轻代堆大小选项值"></a>年轻代堆大小选项值</h3><p>默认情况下，年轻代的大小由选项-XX:NewRatio控制。</p>
+<p>例如，设置-XX:NewRatio=3意味着年轻代和年老代之间的比率是1:3。换句话说eden和survivor空间的总大小将是堆总大小的四分之一。</p>
+<p>选项-XX:NewSize和-XX:MaxNewSize从下到上绑定年轻代大小。将这些值设置为相同的值，就像将-Xms和-Xmx设置为相同的值固定总的堆大小一样。这对于只允许整数倍的-XX:NewRatio来说拥有更细的粒度，对年轻代非常有效。</p>
+<h3 id="幸存者空间大小"><a href="#幸存者空间大小" class="headerlink" title="幸存者空间大小"></a>幸存者空间大小</h3><p>可以使用选项-XX:SurvivorRatio来调整幸存者空间的大小，但通常这对性能并不重要。</p>
+<p>例如，-XX:SurvivorRatio=6将幸存者空间和eden的比率设置成1:6。换句话说，每个幸存者空间将是eden的六分之一，因此是年轻代的八分之一（不是七分之一，因为有两个幸存者空间）。</p>
+<p>如果幸存者空间太小，则复制垃圾收集将直接溢出到年老代中。如果幸存者空间太大，那么他们是无用的空间。在每次垃圾收集时，虚拟机都会选择一个阈值，即对象在变旧之前可以复制的次数。这个阈值是为了让幸存者保持半满，可以使用日志配置-Xlog:gc，age可以显示这个阈值和新一代对象的ages。他对于观察应用程序的生存期分布也是很有用的。</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>-XX:NewRatio</td>
+<td>2</td>
+</tr>
+<tr>
+<td>-XX:NewSize</td>
+<td>1310 MB</td>
+</tr>
+<tr>
+<td>-XX:MaxNewSize</td>
+<td>not limited</td>
+</tr>
+<tr>
+<td>-XX:SurvivorRatio</td>
+<td>8</td>
+</tr>
+</tbody>
+</table>
+<p>从总堆的最大大小和-XX:NewRatio参数值计算年轻代的最大大小。“not limit”默认值意味着计算值不受-XX:MaxNewSize限制，除非再命令上指定了-XX:MaxNewRatio的值。</p>
+<p>以下是服务器应用程序的一般准则：</p>
+<ul>
+<li>首先决定可以给虚拟机提供的最大堆的大小。然后，将性能指标与年轻代大小进行比较，以找到最佳设置。<ul>
+<li>注意最大堆大小总是小于安装在机器上的内存量，以避免过多的分页切花和错误。</li>
+</ul>
+</li>
+<li>如果总堆大小是固定的，那么增加年轻代大小需要减少年老代大小。保持年老代足够大，以容纳应用程序在任何给定时间使用的所有活跃数据，外加一些空闲空间（10%到20%或者更多）。</li>
+<li>受先前年老代约束<ul>
+<li>给年轻代足够的内存</li>
+<li>随着处理器数量的增加，增加年轻代的大小，因为分配内存可以并行化</li>
+</ul>
+</li>
+</ul>
+
+
+                <hr>
+
+                
+
+                <ul class="pager">
+                    
+                        <li class="previous">
+                            <a href="/blog/2019/08/29/可供选择的垃圾收集器(译文)/" data-toggle="tooltip" data-placement="top" title="HotSpot虚拟机垃圾收集优化教程-可供选择的垃圾收集器">&larr; Previous Post</a>
+                        </li>
+                    
+                    
+                        <li class="next">
+                            <a href="/blog/2019/08/21/垃圾收集器实现(译文)/" data-toggle="tooltip" data-placement="top" title="HotSpot虚拟机垃圾收集优化教程-垃圾收集器实现">Next Post &rarr;</a>
+                        </li>
+                    
+                </ul>
+
+                
+
+                
+                <!-- disqus 评论框 start -->
+                <div class="comment">
+                    <div id="disqus_thread" class="disqus-thread"></div>
+                </div>
+                <!-- disqus 评论框 end -->
+                
+
+            </div>
+    <!-- Side Catalog Container -->
+        
+
+    <!-- Sidebar Container -->
+
+            <div class="
+                col-lg-8 col-lg-offset-2
+                col-md-10 col-md-offset-1
+                sidebar-container">
+
+                <!-- Featured Tags -->
+                
+                <section>
+                    <!-- no hr -->
+                    <h5><a href="/blog/tags/">FEATURED TAGS</a></h5>
+                    <div class="tags">
+                       
+                          <a class="tag" href="/blog/tags/#Java" title="Java">Java</a>
+                        
+                          <a class="tag" href="/blog/tags/#JVM" title="JVM">JVM</a>
+                        
+                          <a class="tag" href="/blog/tags/#译文" title="译文">译文</a>
+                        
+                    </div>
+                </section>
+                
+
+                <!-- Friends Blog -->
+                
+                <hr>
+                <h5>FRIENDS</h5>
+                <ul class="list-inline">
+
+                    
+                        <li><a href="" target="_blank"></a></li>
+                    
+                </ul>
+                
+            </div>
+
+        </div>
+    </div>
+</article>
+
+
+
+
+<!-- disqus 公共JS代码 start (一个网页只需插入一次) -->
+<script type="text/javascript">
+    /* * * CONFIGURATION VARIABLES * * */
+    var disqus_shortname = "xiaoyao-blog";
+    var disqus_identifier = "https://xiaoyao-jimmy.github.io/blog/2019/08/25/影响垃圾回收性能表现的因素(译文)/";
+    var disqus_url = "https://xiaoyao-jimmy.github.io/blog/2019/08/25/影响垃圾回收性能表现的因素(译文)/";
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<!-- disqus 公共JS代码 end -->
+
+
+
+
+<!-- async load function -->
+<script>
+    function async(u, c) {
+      var d = document, t = 'script',
+          o = d.createElement(t),
+          s = d.getElementsByTagName(t)[0];
+      o.src = u;
+      if (c) { o.addEventListener('load', function (e) { c(null, e); }, false); }
+      s.parentNode.insertBefore(o, s);
+    }
+</script>
+<!-- anchor-js, Doc:http://bryanbraun.github.io/anchorjs/ -->
+<script>
+    async("https://cdn.bootcss.com/anchor-js/1.1.1/anchor.min.js",function(){
+        anchors.options = {
+          visible: 'always',
+          placement: 'right',
+          icon: '#'
+        };
+        anchors.add().remove('.intro-header h1').remove('.subheading').remove('.sidebar-container h5');
+    })
+</script>
+<style>
+    /* place left on bigger screen */
+    @media all and (min-width: 800px) {
+        .anchorjs-link{
+            position: absolute;
+            left: -0.75em;
+            font-size: 1.1em;
+            margin-top : -0.1em;
+        }
+    }
+</style>
+
+
+
+    <!-- Footer -->
+    <!-- Footer -->
+<footer>
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
+                <ul class="list-inline text-center">
+                
+                
+                
+
+                
+
+                
+
+                
+
+                
+
+                </ul>
+                <p class="copyright text-muted">
+                    Copyright &copy; Xiaoyao&#39;s Blog 2020 
+                    <br>
+                    Theme by <a href="http://huangxuan.me">Hux</a> 
+                    <span style="display: inline-block; margin: 0 5px;">
+                        <i class="fa fa-heart"></i>
+                    </span> 
+                    Ported by <a href="http://blog.kaijun.rocks">Kaijun</a> | 
+                    <iframe
+                        style="margin-left: 2px; margin-bottom:-5px;"
+                        frameborder="0" scrolling="0" width="91px" height="20px"
+                        src="https://ghbtns.com/github-btn.html?user=kaijun&repo=hexo-theme-huxblog&type=star&count=true" >
+                    </iframe>
+                </p>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<!-- jQuery -->
+<script src="/blog/js/jquery.min.js"></script>
+
+<!-- Bootstrap Core JavaScript -->
+<script src="/blog/js/bootstrap.min.js"></script>
+
+<!-- Custom Theme JavaScript -->
+<script src="/blog/js/hux-blog.min.js"></script>
+
+
+<!-- async load function -->
+<script>
+    function async(u, c) {
+      var d = document, t = 'script',
+          o = d.createElement(t),
+          s = d.getElementsByTagName(t)[0];
+      o.src = u;
+      if (c) { o.addEventListener('load', function (e) { c(null, e); }, false); }
+      s.parentNode.insertBefore(o, s);
+    }
+</script>
+
+<!-- 
+     Because of the native support for backtick-style fenced code blocks 
+     right within the Markdown is landed in Github Pages, 
+     From V1.6, There is no need for Highlight.js, 
+     so Huxblog drops it officially.
+
+     - https://github.com/blog/2100-github-pages-now-faster-and-simpler-with-jekyll-3-0  
+     - https://help.github.com/articles/creating-and-highlighting-code-blocks/    
+-->
+<!--
+    <script>
+        async("http://cdn.bootcss.com/highlight.js/8.6/highlight.min.js", function(){
+            hljs.initHighlightingOnLoad();
+        })
+    </script>
+    <link href="http://cdn.bootcss.com/highlight.js/8.6/styles/github.min.css" rel="stylesheet">
+-->
+
+
+<!-- jquery.tagcloud.js -->
+<script>
+    // only load tagcloud.js in tag.html
+    if($('#tag_cloud').length !== 0){
+        async("https://xiaoyao-jimmy.github.io/blog/blog/js/jquery.tagcloud.js",function(){
+            $.fn.tagcloud.defaults = {
+                //size: {start: 1, end: 1, unit: 'em'},
+                color: {start: '#bbbbee', end: '#0085a1'},
+            };
+            $('#tag_cloud a').tagcloud();
+        })
+    }
+</script>
+
+<!--fastClick.js -->
+<script>
+    async("https://cdn.bootcss.com/fastclick/1.0.6/fastclick.min.js", function(){
+        var $nav = document.querySelector("nav");
+        if($nav) FastClick.attach($nav);
+    })
+</script>
+
+
+<!-- Google Analytics -->
+
+
+<script>
+    // dynamic User by Hux
+    var _gaId = 'UA-49627206-1';
+    var _gaDomain = 'huangxuan.me';
+
+    // Originial
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+    ga('create', _gaId, _gaDomain);
+    ga('send', 'pageview');
+</script>
+
+
+
+
+<!-- Baidu Tongji -->
+
+<script>
+    // dynamic User by Hux
+    var _baId = '4cc1f2d8f3067386cc5cdb626a202900';
+
+    // Originial
+    var _hmt = _hmt || [];
+    (function() {
+      var hm = document.createElement("script");
+      hm.src = "//hm.baidu.com/hm.js?" + _baId;
+      var s = document.getElementsByTagName("script")[0];
+      s.parentNode.insertBefore(hm, s);
+    })();
+</script>
+
+
+<!-- Side Catalog -->
+
+
+
+
+
+<!-- Image to hack wechat -->
+<img src="https://xiaoyao-jimmy.github.io/blog/blog/img/icon_wechat.png" width="0" height="0" />
+<!-- Migrate from head to bottom, no longer block render and still work -->
+
+</body>
+
+</html>
